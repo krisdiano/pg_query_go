@@ -13,6 +13,7 @@ package parser
 #include "pg_query.h"
 #include "xxhash.h"
 #include <stdlib.h>
+#include <stdio.h>
 
 // Avoid complexities dealing with C structs in Go
 PgQueryDeparseResult pg_query_deparse_protobuf_direct_args(void* data, unsigned int len) {
@@ -25,6 +26,14 @@ PgQueryDeparseResult pg_query_deparse_protobuf_direct_args(void* data, unsigned 
 // Avoid inconsistent type behaviour in xxhash library
 uint64_t pg_query_hash_xxh3_64(void *data, size_t len, size_t seed) {
 	return XXH3_64bits_withSeed(data, len, seed);
+}
+
+char* split_item_ptr(PgQuerySplitStmt **ptr, int n) {
+	return (char*)(ptr[n]);
+}
+
+int split_size() {
+	return sizeof(PgQuerySplitStmt);
 }
 */
 import "C"
@@ -105,7 +114,29 @@ func ScanToProtobuf(input string) (result []byte, err error) {
 	return
 }
 
-// ParseToProtobuf - Parses the given SQL statement into a parse tree (Protobuf format)
+func SplitWithScanner(input string) (result []byte, n int, err error) {
+	inputC := C.CString(input)
+	defer C.free(unsafe.Pointer(inputC))
+
+	resultC := C.pg_query_split_with_scanner(inputC)
+	defer C.pg_query_free_split_result(resultC)
+
+	if resultC.error != nil {
+		err = newPgQueryError(resultC.error)
+		return
+	}
+
+	n = int(resultC.n_stmts)
+	if resultC.stmts != nil && resultC.n_stmts > 0 {
+		for i := 0; i < n; i++ {
+			tmp := []byte(C.GoStringN(C.split_item_ptr(resultC.stmts, C.int(i)), C.split_size()))
+			result = append(result, tmp...)
+		}
+	}
+
+	return
+}
+
 func ParseToProtobuf(input string) (result []byte, err error) {
 	inputC := C.CString(input)
 	defer C.free(unsafe.Pointer(inputC))

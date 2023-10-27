@@ -1,6 +1,8 @@
 package pg_query
 
 import (
+	"unsafe"
+
 	proto "github.com/golang/protobuf/proto"
 
 	"github.com/pganalyze/pg_query_go/v4/parser"
@@ -16,6 +18,24 @@ func Scan(input string) (result *ScanResult, err error) {
 	return
 }
 
+type SplitResult struct {
+	Location int32
+	Length   int32
+}
+
+func SplitWithScanner(input string) (ret []SplitResult, err error) {
+	rst, n, err := parser.SplitWithScanner(input)
+	if err != nil {
+		return nil, err
+	}
+	for i := 0; i < n; i++ {
+		rptr := (unsafe.Pointer)(uintptr(unsafe.Pointer(&rst[0])) + uintptr(i)*8)
+		ptr := (*SplitResult)(rptr)
+		ret = append(ret, *ptr)
+	}
+	return ret, nil
+}
+
 // ParseToJSON - Parses the given SQL statement into a parse tree (JSON format)
 func ParseToJSON(input string) (result string, err error) {
 	return parser.ParseToJSON(input)
@@ -23,6 +43,18 @@ func ParseToJSON(input string) (result string, err error) {
 
 // Parse the given SQL statement into a parse tree (Go struct format)
 func Parse(input string) (tree *ParseResult, err error) {
+	protobufTree, err := parser.ParseToProtobuf(input)
+	if err != nil {
+		return
+	}
+
+	tree = &ParseResult{}
+	err = proto.Unmarshal(protobufTree, tree)
+	return
+}
+
+// Parse the given SQL statement into a parse tree (Go struct format)
+func ParseWithErrorHandler(input string) (tree *ParseResult, err error) {
 	protobufTree, err := parser.ParseToProtobuf(input)
 	if err != nil {
 		return
